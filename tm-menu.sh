@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+
+#  Purpose: tmux menu to select sessions
+#  Author:  Don Williams
+#  Created:  Spet 14th, 2026
+#
+
+# Tmux session manager menu
+tm_menu() {
+  local BOLD="\033[1m"
+  local RESET="\033[0m"
+  local DIM="\033[2m"
+  local CYAN="\033[1;36m"
+  local GREEN="\033[1;32m"
+  local YELLOW="\033[1;33m"
+  local BLUE="\033[1;34m"
+  local MAGENTA="\033[1;35m"
+  local WHITE="\033[1;37m"
+
+  if ! command -v tmux >/dev/null 2>&1; then
+    printf "%b\n" "${YELLOW}tmux is not installed.${RESET}"
+    return 1
+  fi
+
+  # Check if tmux is running and has active sessions
+  if ! tmux list-sessions >/dev/null 2>&1; then
+    printf "\n%b\n" "${YELLOW}󰐕 No active tmux sessions found. Starting a new session...${RESET}"
+    tmux new-session
+    return 0
+  fi
+
+  local session_names=()
+  local session_windows=()
+  local session_created=()
+  local session_attached=()
+  local s_name s_wins s_created s_att win_label win_str status_str i s
+
+  while IFS=$'\t' read -r s_name s_wins s_created s_att || [ -n "$s_name" ]; do
+    [ -z "$s_name" ] && continue
+    session_names+=("$s_name")
+    session_windows+=("$s_wins")
+    session_created+=("$s_created")
+    session_attached+=("$s_att")
+  done < <(tmux list-sessions -F "#{session_name}	#{session_windows}	#{?#{t/f/%Y-%m-%d %H#:%M:session_created},#{t/f/%Y-%m-%d %H#:%M:session_created},#{t:session_created}}	#{session_attached}" 2>/dev/null)
+
+  local total=${#session_names[@]}
+  if [ "$total" -eq 0 ]; then
+    printf "\n%b\n" "${YELLOW}󰐕 No active tmux sessions found. Starting a new session...${RESET}"
+    tmux new-session
+    return 0
+  fi
+
+  local name_w=15
+  for s in "${session_names[@]}"; do
+    [ ${#s} -gt $name_w ] && name_w=${#s}
+  done
+  [ $name_w -gt 32 ] && name_w=32
+
+  local current_session=""
+  local in_tmux=0
+  if [ -n "$TMUX" ]; then
+    in_tmux=1
+    current_session=$(tmux display-message -p '#{session_name}' 2>/dev/null)
+  fi
+
+  local s_ul=""
+  for ((i = 0; i < name_w + 2; i++)); do s_ul="${s_ul}─"; done
+
+  printf "\n"
+  printf "  %b╭──────────────────────────────────────────────────────────────────────────╮%b\n" "${CYAN}" "${RESET}"
+  printf "  %b│                        %b  TMUX SESSION MANAGER%b                           %b│%b\n" "${CYAN}" "${WHITE}" "${CYAN}" "${CYAN}" "${RESET}"
+  printf "  %b╰──────────────────────────────────────────────────────────────────────────╯%b\n\n" "${CYAN}" "${RESET}"
+
+  printf "  %bNUM   %-*s  WINDOWS       CREATED             STATUS%b\n" "${BOLD}" "$((name_w + 2))" "SESSION" "${RESET}"
+  printf "  %b───   %s  ────────────  ──────────────────  ──────────%b\n" "${DIM}" "$s_ul" "${RESET}"
+
+  for ((i = 1; i <= total; i++)); do
+    if [ -n "$ZSH_VERSION" ]; then
+      s_name="${session_names[$i]}"
+      s_wins="${session_windows[$i]}"
+      s_created="${session_created[$i]}"
+      s_att="${session_attached[$i]}"
+    else
+      s_name="${session_names[$((i - 1))]}"
+      s_wins="${session_windows[$((i - 1))]}"
+      s_created="${session_created[$((i - 1))]}"
+      s_att="${session_attached[$((i - 1))]}"
+    fi
+
+    win_label="windows"
+    [ "$s_wins" -eq 1 ] && win_label="window"
+    win_str="${s_wins} ${win_label}"
+
+    if [ "$s_att" -gt 0 ]; then
+      if [ "$s_att" -gt 1 ]; then
+        status_str="${GREEN}● attached (${s_att})${RESET}"
+      else
+        status_str="${GREEN}● attached${RESET}"
+      fi
+    else
+      status_str="${YELLOW}○ detached${RESET}"
+    fi
+
+    if [ "$in_tmux" -eq 1 ] && [ "$s_name" = "$current_session" ]; then
+      status_str="${status_str} ${CYAN}(current)${RESET}"
+    fi
+
+    printf "  %b[%s]%b   %b %-*s%b  %b󰖲 %-10s%b  %b󰃰 %-16s%b  %b\n" \
+      "${YELLOW}" "$i" "${RESET}" \
+      "${CYAN}" "$name_w" "$s_name" "${RESET}" \
+      "${BLUE}" "$win_str" "${RESET}" \
+      "${MAGENTA}" "$s_created" "${RESET}" \
+      "$status_str"
+  done
+
+  printf "\n"
+  printf "  %b[n]%b %b󰐕 New session%b       %b[q]%b %b󰅚 Cancel%b\n\n" \
+    "${YELLOW}" "${RESET}" "${WHITE}" "${RESET}" \
+    "${YELLOW}" "${RESET}" "${WHITE}" "${RESET}"
+
+  local choice target_session new_name
+  while true; do
+    printf "%b" "${BOLD}Select a session [1-${total}, n, q]: ${RESET}"
+    read -r choice
+    case "$choice" in
+    [qQ] | exit | quit)
+      return 0
+      ;;
+    [nN] | new)
+      printf "%b" "${BOLD}Enter new session name (or press Enter for default): ${RESET}"
+      read -r new_name
+      if [ -n "$TMUX" ]; then
+        if [ -n "$new_name" ]; then
+          tmux new-session -d -s "$new_name" && tmux switch-client -t "$new_name"
+        else
+          local created_name
+          created_name=$(tmux new-session -d -P -F "#{session_name}")
+          tmux switch-client -t "$created_name"
+        fi
+      else
+        if [ -n "$new_name" ]; then
+          tmux new-session -s "$new_name"
+        else
+          tmux new-session
+        fi
+      fi
+      return 0
+      ;;
+    '' | *[!0-9]*)
+      printf "%b\n" "${YELLOW}Invalid choice. Please enter 1-${total}, 'n', or 'q'.${RESET}"
+      ;;
+    *)
+      if [ "$choice" -ge 1 ] && [ "$choice" -le "$total" ]; then
+        if [ -n "$ZSH_VERSION" ]; then
+          target_session="${session_names[$choice]}"
+        else
+          target_session="${session_names[$((choice - 1))]}"
+        fi
+        if [ -n "$TMUX" ]; then
+          tmux switch-client -t "$target_session"
+        else
+          # -d forcefully detaches any other active clients to prevent screen mirroring
+          tmux attach-session -d -t "$target_session"
+        fi
+        return 0
+      else
+        printf "%b\n" "${YELLOW}Invalid number. Please enter 1-${total}.${RESET}"
+      fi
+      ;;
+    esac
+  done
+}
+
+tm_menu "$@"
