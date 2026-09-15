@@ -16,3 +16,4 @@
 ## Sept 2026
 
 - Initial commit
+- Added presence check for `tmux` with formatted error message and exit code if not found

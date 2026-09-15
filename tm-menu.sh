@@ -10,6 +10,7 @@ tm_menu() {
   local BOLD="\033[1m"
   local RESET="\033[0m"
   local DIM="\033[2m"
+  local RED="\033[1;31m"
   local CYAN="\033[1;36m"
   local GREEN="\033[1;32m"
   local YELLOW="\033[1;33m"
@@ -17,8 +18,10 @@ tm_menu() {
   local MAGENTA="\033[1;35m"
   local WHITE="\033[1;37m"
 
+  # Check if tmux is installed
   if ! command -v tmux >/dev/null 2>&1; then
-    printf "%b\n" "${YELLOW}tmux is not installed.${RESET}"
+    printf "\n  %b󰅚 Error:%b %btmux is not installed. Please install tmux to use tm-menu.%b\n\n" \
+      "${RED}" "${RESET}" "${WHITE}" "${RESET}" >&2
     return 1
   fi
 
